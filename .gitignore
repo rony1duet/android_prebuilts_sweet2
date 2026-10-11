@@ -1,0 +1,11 @@
+# Downloaded/generated prebuilts must never be committed.
+out/
+*.apk
+*.so
+*.part
+
+# Host/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Copy to .repo/local_manifests/sweet2-prebuilts.xml, then run repo sync. -->
+<manifest>
+  <remote name="rony1duet"
+          fetch="https://github.com/rony1duet/"
+          revision="main" />
+  <project path="vendor/android_prebuilts_sweet2"
+           name="android_prebuilts_sweet2"
+           remote="rony1duet"
+           revision="main" />
+</manifest>
