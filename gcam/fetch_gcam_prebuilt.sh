@@ -24,11 +24,9 @@ download() {
   local destination="$1"
   if command -v curl >/dev/null 2>&1; then
     curl --fail --location --retry 3 --output "$destination" \
-      -H "Referer: https://www.celsoazevedo.com/files/android/google-camera/dev-bsg/" \
       "$GCAM_APK_URL"
   elif command -v wget >/dev/null 2>&1; then
     wget --https-only --tries=3 --output-document="$destination" \
-      --header="Referer: https://www.celsoazevedo.com/files/android/google-camera/dev-bsg/" \
       "$GCAM_APK_URL"
   else
     echo "error: curl or wget is required" >&2
