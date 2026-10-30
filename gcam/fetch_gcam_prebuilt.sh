@@ -5,8 +5,18 @@ set -euo pipefail
 
 readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly REPO_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
-# shellcheck source=gcam-prebuilt.env
-source "${SCRIPT_DIR}/gcam-prebuilt.env"
+
+# Source environment variables safely (stripping any Windows CRLF line endings)
+if [[ -f "${SCRIPT_DIR}/gcam-prebuilt.env" ]]; then
+  eval "$(tr -d '\r' < "${SCRIPT_DIR}/gcam-prebuilt.env")"
+fi
+
+# Sanitize variables of any residual carriage returns
+GCAM_VERSION="${GCAM_VERSION%$'\r'}"
+GCAM_APK_NAME="${GCAM_APK_NAME%$'\r'}"
+GCAM_APK_URL="${GCAM_APK_URL%$'\r'}"
+GCAM_APK_SHA256="${GCAM_APK_SHA256%$'\r'}"
+GCAM_PACKAGE_NAME="${GCAM_PACKAGE_NAME%$'\r'}"
 
 readonly DESTINATION="${1:-${GCAM_DESTINATION:-${REPO_DIR}/out/gcam/GoogleCameraEng}}"
 readonly APK_DEST="${DESTINATION}/GoogleCameraEng.apk"
@@ -22,11 +32,12 @@ sha256_of() {
 
 download() {
   local destination="$1"
+  mkdir -p "$(dirname "$destination")"
   if command -v curl >/dev/null 2>&1; then
-    curl --fail --location --retry 3 --output "$destination" \
+    curl -sS --fail --location --retry 3 --retry-delay 2 --output "$destination" \
       "$GCAM_APK_URL"
   elif command -v wget >/dev/null 2>&1; then
-    wget --https-only --tries=3 --output-document="$destination" \
+    wget -q --https-only --tries=3 --output-document="$destination" \
       "$GCAM_APK_URL"
   else
     echo "error: curl or wget is required" >&2
