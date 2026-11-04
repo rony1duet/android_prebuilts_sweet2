@@ -37,16 +37,14 @@ download_file() {
   local target_url="$1"
   local destination="$2"
   mkdir -p "$(dirname "$destination")"
+  local curl_args=(-sSL --fail --retry 3 --retry-delay 2 -H "User-Agent: Mozilla/5.0")
+  if [[ "$target_url" == *"celsoazevedo.com"* ]]; then
+    curl_args+=(-H "Referer: https://www.celsoazevedo.com/files/android/google-camera/dev-bsg/f/dl400/")
+  fi
   if command -v curl >/dev/null 2>&1; then
-    curl -sSL --fail --retry 3 --retry-delay 2 \
-      -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-      -H "Referer: https://www.celsoazevedo.com/files/android/google-camera/dev-bsg/f/dl400/" \
-      --output "$destination" "$target_url"
+    curl "${curl_args[@]}" --output "$destination" "$target_url"
   elif command -v wget >/dev/null 2>&1; then
-    wget -q --https-only --tries=3 \
-      --header="User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
-      --header="Referer: https://www.celsoazevedo.com/files/android/google-camera/dev-bsg/f/dl400/" \
-      --output-document="$destination" "$target_url"
+    wget -q --https-only --tries=3 --output-document="$destination" "$target_url"
   else
     echo "error: curl or wget is required" >&2
     exit 1
@@ -64,19 +62,30 @@ mkdir -p "$DESTINATION" "$LIB_DEST"
 if [[ -f "$APK_DEST" ]] && [[ "$(sha256_of "$APK_DEST")" == "$GCAM_APK_SHA256" ]]; then
   echo "Using verified existing ${GCAM_APK_NAME}."
 else
-  # 2. Check cache directories
   found_cached=false
-  for cdir in "${CACHE_DIRS[@]}"; do
-    cached_file="${cdir}/${GCAM_APK_NAME}"
-    if [[ -f "$cached_file" ]] && [[ "$(sha256_of "$cached_file")" == "$GCAM_APK_SHA256" ]]; then
-      echo "Using cached ${GCAM_APK_NAME} from ${cached_file}."
-      cp -f "$cached_file" "$APK_DEST"
-      found_cached=true
-      break
-    fi
-  done
 
-  # 3. If not cached, download with mirror fallback
+  # 2. Check if repository contains the Git LFS prebuilt APK
+  local_repo_apk="${SCRIPT_DIR}/GoogleCameraEng.apk"
+  if [[ -f "$local_repo_apk" ]] && [[ "$(sha256_of "$local_repo_apk")" == "$GCAM_APK_SHA256" ]]; then
+    echo "Using Git LFS prebuilt ${GCAM_APK_NAME} directly from repository."
+    cp -f "$local_repo_apk" "$APK_DEST"
+    found_cached=true
+  fi
+
+  # 3. Check cache directories
+  if [[ "$found_cached" != "true" ]]; then
+    for cdir in "${CACHE_DIRS[@]}"; do
+      cached_file="${cdir}/${GCAM_APK_NAME}"
+      if [[ -f "$cached_file" ]] && [[ "$(sha256_of "$cached_file")" == "$GCAM_APK_SHA256" ]]; then
+        echo "Using cached ${GCAM_APK_NAME} from ${cached_file}."
+        cp -f "$cached_file" "$APK_DEST"
+        found_cached=true
+        break
+      fi
+    done
+  fi
+
+  # 4. If not found locally or cached, download with mirror fallback
   if [[ "$found_cached" != "true" ]]; then
     tmp_apk="$(mktemp "${TMPDIR:-/tmp}/${GCAM_APK_NAME}.XXXXXX")"
     trap 'rm -f "$tmp_apk"' EXIT
