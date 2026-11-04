@@ -15,12 +15,15 @@ fi
 GCAM_VERSION="${GCAM_VERSION%$'\r'}"
 GCAM_APK_NAME="${GCAM_APK_NAME%$'\r'}"
 GCAM_APK_URL="${GCAM_APK_URL%$'\r'}"
+GCAM_APK_MIRROR_URL="${GCAM_APK_MIRROR_URL:-}"
+GCAM_APK_MIRROR_URL="${GCAM_APK_MIRROR_URL%$'\r'}"
 GCAM_APK_SHA256="${GCAM_APK_SHA256%$'\r'}"
 GCAM_PACKAGE_NAME="${GCAM_PACKAGE_NAME%$'\r'}"
 
 readonly DESTINATION="${1:-${GCAM_DESTINATION:-${REPO_DIR}/out/gcam/GoogleCameraEng}}"
 readonly APK_DEST="${DESTINATION}/GoogleCameraEng.apk"
 readonly LIB_DEST="${DESTINATION}/lib/arm64"
+readonly CACHE_DIRS=("/tmp/gcam_cache" "${HOME:-/root}/.cache/gcam")
 
 sha256_of() {
   if command -v sha256sum >/dev/null 2>&1; then
@@ -30,15 +33,20 @@ sha256_of() {
   fi
 }
 
-download() {
-  local destination="$1"
+download_file() {
+  local target_url="$1"
+  local destination="$2"
   mkdir -p "$(dirname "$destination")"
   if command -v curl >/dev/null 2>&1; then
-    curl -sS --fail --location --retry 3 --retry-delay 2 --output "$destination" \
-      "$GCAM_APK_URL"
+    curl -sSL --fail --retry 3 --retry-delay 2 \
+      -H "User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+      -H "Referer: https://www.celsoazevedo.com/files/android/google-camera/dev-bsg/f/dl400/" \
+      --output "$destination" "$target_url"
   elif command -v wget >/dev/null 2>&1; then
-    wget -q --https-only --tries=3 --output-document="$destination" \
-      "$GCAM_APK_URL"
+    wget -q --https-only --tries=3 \
+      --header="User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64)" \
+      --header="Referer: https://www.celsoazevedo.com/files/android/google-camera/dev-bsg/f/dl400/" \
+      --output-document="$destination" "$target_url"
   else
     echo "error: curl or wget is required" >&2
     exit 1
@@ -51,22 +59,66 @@ command -v unzip >/dev/null 2>&1 || {
 }
 
 mkdir -p "$DESTINATION" "$LIB_DEST"
+
+# 1. Check if destination APK already exists and is valid
 if [[ -f "$APK_DEST" ]] && [[ "$(sha256_of "$APK_DEST")" == "$GCAM_APK_SHA256" ]]; then
   echo "Using verified existing ${GCAM_APK_NAME}."
 else
-  tmp_apk="$(mktemp "${TMPDIR:-/tmp}/${GCAM_APK_NAME}.XXXXXX")"
-  trap 'rm -f "$tmp_apk"' EXIT
-  echo "Downloading ${GCAM_APK_NAME}..."
-  download "$tmp_apk"
-  actual_sha256="$(sha256_of "$tmp_apk")"
-  if [[ "$actual_sha256" != "$GCAM_APK_SHA256" ]]; then
-    echo "error: APK SHA-256 mismatch" >&2
-    echo "expected: $GCAM_APK_SHA256" >&2
-    echo "actual:   $actual_sha256" >&2
-    exit 1
+  # 2. Check cache directories
+  found_cached=false
+  for cdir in "${CACHE_DIRS[@]}"; do
+    cached_file="${cdir}/${GCAM_APK_NAME}"
+    if [[ -f "$cached_file" ]] && [[ "$(sha256_of "$cached_file")" == "$GCAM_APK_SHA256" ]]; then
+      echo "Using cached ${GCAM_APK_NAME} from ${cached_file}."
+      cp -f "$cached_file" "$APK_DEST"
+      found_cached=true
+      break
+    fi
+  done
+
+  # 3. If not cached, download with mirror fallback
+  if [[ "$found_cached" != "true" ]]; then
+    tmp_apk="$(mktemp "${TMPDIR:-/tmp}/${GCAM_APK_NAME}.XXXXXX")"
+    trap 'rm -f "$tmp_apk"' EXIT
+
+    download_success=false
+    urls=("$GCAM_APK_URL")
+    if [[ -n "$GCAM_APK_MIRROR_URL" ]]; then
+      urls+=("$GCAM_APK_MIRROR_URL")
+    fi
+
+    for url in "${urls[@]}"; do
+      echo "Attempting to download ${GCAM_APK_NAME} from: ${url}..."
+      if download_file "$url" "$tmp_apk"; then
+        actual_sha256="$(sha256_of "$tmp_apk")"
+        if [[ "$actual_sha256" == "$GCAM_APK_SHA256" ]]; then
+          echo "Download successful and SHA-256 verified."
+          download_success=true
+          break
+        else
+          echo "Warning: SHA-256 mismatch from ${url} (got ${actual_sha256}), trying next mirror..."
+          rm -f "$tmp_apk"
+        fi
+      else
+        echo "Warning: Download failed from ${url}, trying next mirror..."
+        rm -f "$tmp_apk"
+      fi
+    done
+
+    if [[ "$download_success" != "true" ]]; then
+      echo "error: failed to download valid ${GCAM_APK_NAME} from all mirrors" >&2
+      exit 1
+    fi
+
+    mv "$tmp_apk" "$APK_DEST"
+    trap - EXIT
+
+    # Populate caches
+    for cdir in "${CACHE_DIRS[@]}"; do
+      mkdir -p "$cdir" 2>/dev/null || true
+      cp -f "$APK_DEST" "${cdir}/${GCAM_APK_NAME}" 2>/dev/null || true
+    done
   fi
-  mv "$tmp_apk" "$APK_DEST"
-  trap - EXIT
 fi
 
 unzip -tq "$APK_DEST" >/dev/null
