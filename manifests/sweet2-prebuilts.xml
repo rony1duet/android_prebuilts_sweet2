@@ -3,9 +3,9 @@
 <manifest>
   <remote name="rony1duet"
           fetch="https://github.com/rony1duet/"
-          revision="main" />
+          revision="PixelOS-17-base" />
   <project path="vendor/android_prebuilts_sweet2"
            name="android_prebuilts_sweet2"
            remote="rony1duet"
-           revision="main" />
+           revision="PixelOS-17-base" />
 </manifest>
